@@ -10,7 +10,7 @@ function Index() {
       <Logos to="/next"/>
       <h1>Vite + React</h1>
       <p className="read-the-docs">
-        Click on the Vite and React logos to go to the <Link to="/next">next</Link> page
+        Click on the Vite and React logos to go to the <Link to="next">next</Link> page
       </p>
     </>
   )
@@ -22,7 +22,7 @@ function Next() {
       <Logos to="/"/>
       <h1>Next</h1>
       <p className="read-the-docs">
-        Click on the Vite and React logos to go <Link to="/">back</Link>
+        Click on the Vite and React logos to go <Link to="/%DEPLOYMENT_PATH%/">back</Link>
       </p>
     </>
   )
@@ -46,8 +46,8 @@ function Logos(props: any) {
 function App() {
   return (
     <Routes>
-      <Route path='/' element={<Index />} />
-      <Route path='/next' element={<Next />} />
+      <Route path='/%DEPLOYMENT_PATH%/' element={<Index />} />
+      <Route path='/%DEPLOYMENT_PATH%/next' element={<Next />} />
     </Routes>
   )
 }

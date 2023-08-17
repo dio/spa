@@ -3,17 +3,27 @@ package main
 import (
 	"context"
 	"embed"
+	"flag"
 	"net/http"
 	"time"
 
 	"github.com/dio/spa"
 )
 
+var prefix string
+
 //go:embed client/dist
 var clientFS embed.FS
 
+func init() {
+	flag.StringVar(&prefix, "prefix", "", "Deployment path e.g. ok")
+}
+
 func main() {
-	assets, _ := spa.NewAssets(clientFS, "client/dist")
+	flag.Parse()
+
+	// The client/dist is built using PUBLIC_URL=%DEPLOYMENT_PATH% yarn build. See: example/client/vite.config.ts.
+	assets, _ := spa.NewAssets(clientFS, "client/dist", spa.WithPrefix("%DEPLOYMENT_PATH%", prefix, spa.NewInMemAfero()))
 	srv := newServer(assets)
 	srv.Run(context.Background())
 }
