@@ -16,13 +16,13 @@ function Index() {
   )
 }
 
-function Next() {
+function Next(props: any) {
   return (
     <>
       <Logos to="/"/>
       <h1>Next</h1>
       <p className="read-the-docs">
-        Click on the Vite and React logos to go <Link to="/%DEPLOYMENT_PATH%/">back</Link>
+        Click on the Vite and React logos to go <Link to={props.withPrefix ? '/%DEPLOYMENT_PATH%/' : '/'}>back</Link>
       </p>
     </>
   )
@@ -46,8 +46,10 @@ function Logos(props: any) {
 function App() {
   return (
     <Routes>
+      <Route path='/' element={<Index />} />
+      <Route path='/next' element={<Next />} />
       <Route path='/%DEPLOYMENT_PATH%/' element={<Index />} />
-      <Route path='/%DEPLOYMENT_PATH%/next' element={<Next />} />
+      <Route path='/%DEPLOYMENT_PATH%/next' element={<Next withPrefix />} />
     </Routes>
   )
 }

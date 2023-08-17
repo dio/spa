@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/liamg/memoryfs"
 	"github.com/spf13/afero"
@@ -17,23 +18,30 @@ type Assets struct {
 }
 
 func NewAssets(source fs.FS, sourcePrefix string, assets AssetsFS, opts ...AssetsOption) (*Assets, error) {
-	files, err := fs.Sub(source, sourcePrefix)
+	subtree, err := fs.Sub(source, sourcePrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	a := &Assets{
-		files: assets,
+	a := new(Assets)
+
+	// When we have no intent to manipulate the loaded content, we can skip initializing memory-fs.
+	if len(opts) == 0 && assets == nil {
+		a.files = &inMemEmbed{assets: subtree}
+		a.handler = http.FileServer(http.FS(a.files))
+		return a, nil
 	}
 
+	a.files = assets
 	if a.files == nil {
 		a.files = NewInMemAfero()
 	}
 
+	// We create a map here to facilitate and track ETag-ing later.
 	a.statics = make(map[string]string, 0)
 
 	// We always load the data to a writeable in-memory fs, hence we can do manipulation to the loaded assets.
-	_ = fs.WalkDir(files, ".", func(entry string, d fs.DirEntry, err error) error {
+	_ = fs.WalkDir(subtree, ".", func(entry string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
 			if entry != "." {
 				_ = a.files.MkdirAll(entry, os.ModePerm)
@@ -41,9 +49,10 @@ func NewAssets(source fs.FS, sourcePrefix string, assets AssetsFS, opts ...Asset
 			return nil
 		}
 		if entry != "index.html" {
+			// TODO(dio): ETag-ing.
 			a.statics[path.Join("/", entry)] = entry
 		}
-		data, _ := fs.ReadFile(files, entry)
+		data, _ := fs.ReadFile(subtree, entry)
 		return a.files.WriteFile(entry, data, os.ModePerm)
 	})
 
@@ -59,11 +68,17 @@ func NewAssets(source fs.FS, sourcePrefix string, assets AssetsFS, opts ...Asset
 }
 
 func (a *Assets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	entry, ok := a.statics[r.URL.Path]
-	if !ok {
-		r.URL.Path = "/"
+	if len(a.statics) > 0 {
+		entry, ok := a.statics[r.URL.Path]
+		if !ok {
+			r.URL.Path = "/"
+		}
+		r.URL.Path = path.Join("/", entry) // entry is prepended by the prefix.
+	} else {
+		if _, err := a.files.Stat(r.URL.Path); err != nil {
+			r.URL.Path = "/"
+		}
 	}
-	r.URL.Path = path.Join("/", entry)
 	a.handler.ServeHTTP(w, r)
 }
 
@@ -72,6 +87,7 @@ type AssetsFS interface {
 
 	MkdirAll(string, fs.FileMode) error
 	WriteFile(string, []byte, fs.FileMode) error
+	Stat(name string) (os.FileInfo, error)
 }
 
 func NewInMem() AssetsFS {
@@ -97,6 +113,10 @@ func (f *inMemAfero) MkdirAll(entry string, fileMode fs.FileMode) error {
 	return f.assets.MkdirAll(entry, fileMode)
 }
 
+func (f *inMemAfero) Stat(name string) (os.FileInfo, error) {
+	return f.assets.Stat(name)
+}
+
 // WriteFile creates a file in the filesystem and write the content to it.
 func (f *inMemAfero) WriteFile(entry string, content []byte, mode fs.FileMode) error {
 	h, err := f.assets.Create(entry)
@@ -108,4 +128,24 @@ func (f *inMemAfero) WriteFile(entry string, content []byte, mode fs.FileMode) e
 		return err
 	}
 	return h.Close()
+}
+
+type inMemEmbed struct {
+	assets fs.FS
+}
+
+func (f inMemEmbed) Open(name string) (fs.File, error) {
+	return f.assets.Open(name)
+}
+
+func (f *inMemEmbed) MkdirAll(entry string, fileMode fs.FileMode) error {
+	return nil
+}
+
+func (f *inMemEmbed) Stat(name string) (os.FileInfo, error) {
+	return fs.Stat(f.assets, strings.TrimPrefix(name, "/"))
+}
+
+func (f *inMemEmbed) WriteFile(entry string, content []byte, mode fs.FileMode) error {
+	return nil
 }
