@@ -23,7 +23,7 @@ func main() {
 	flag.Parse()
 
 	// The client/dist is built using PUBLIC_URL=%DEPLOYMENT_PATH% yarn build. See: example/client/vite.config.ts.
-	assets, _ := spa.NewAssets(clientFS, "client/dist", spa.WithPrefix("%DEPLOYMENT_PATH%", prefix, spa.NewInMemAfero()))
+	assets, _ := spa.NewAssets(clientFS, "client/dist", nil, spa.WithPrefix("%DEPLOYMENT_PATH%", prefix))
 	srv := newServer(assets)
 	srv.Run(context.Background())
 }

@@ -1,1 +1,1 @@
-console.log('cool', '%DEPLOYMENT_PATH%'); // TODO(dio): Allow to modify DEPLOYMENT_PATH on the fly.
+console.log('cool', '%DEPLOYMENT_PATH%/'); // TODO(dio): Allow to modify deployment path (prefix) on the fly.

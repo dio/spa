@@ -18,7 +18,7 @@ import (
 var testdataFs embed.FS
 
 func TestServeHTTP(t *testing.T) {
-	assets, err := spa.NewAssets(testdataFs, "testdata/app")
+	assets, err := spa.NewAssets(testdataFs, "testdata/app", spa.NewInMem(), spa.WithPrefix("%DEPLOYMENT_PATH%", ""))
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -53,6 +53,12 @@ func TestServeHTTP(t *testing.T) {
 			path: "/statics/js/baseUniq.a46ea275.js",
 			validate: func(body *bytes.Buffer) {
 				requireContainsBodyString(t, body, "console.log('base');")
+			},
+		},
+		{
+			path: "/statics/cool.js",
+			validate: func(body *bytes.Buffer) {
+				requireContainsBodyString(t, body, "console.log('cool', '')")
 			},
 		},
 	}

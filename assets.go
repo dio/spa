@@ -5,33 +5,47 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"strings"
 
+	"github.com/liamg/memoryfs"
 	"github.com/spf13/afero"
 )
 
-type AssetsOption func(*Assets) error
-
 type Assets struct {
-	files   fs.FS
+	files   AssetsFS
 	statics map[string]string
 	handler http.Handler
 }
 
-func NewAssets(fsys fs.FS, prefix string, opts ...AssetsOption) (*Assets, error) {
-	files, err := fs.Sub(fsys, prefix)
+func NewAssets(source fs.FS, sourcePrefix string, assets AssetsFS, opts ...AssetsOption) (*Assets, error) {
+	files, err := fs.Sub(source, sourcePrefix)
 	if err != nil {
 		return nil, err
 	}
-	a := &Assets{files: files}
+
+	a := &Assets{
+		files: assets,
+	}
+
+	if a.files == nil {
+		a.files = NewInMemAfero()
+	}
+
 	a.statics = make(map[string]string, 0)
+
+	// We always load the data to a writeable in-memory fs, hence we can do manipulation to the loaded assets.
 	_ = fs.WalkDir(files, ".", func(entry string, d fs.DirEntry, err error) error {
-		if !d.IsDir() && entry != "index.html" {
+		if d.IsDir() {
+			if entry != "." {
+				_ = a.files.MkdirAll(entry, os.ModePerm)
+			}
+			return nil
+		}
+		if entry != "index.html" {
 			a.statics[path.Join("/", entry)] = entry
 		}
-		return nil
+		data, _ := fs.ReadFile(files, entry)
+		return a.files.WriteFile(entry, data, os.ModePerm)
 	})
-	a.handler = http.FileServer(http.FS(files))
 
 	for _, opt := range opts {
 		if err := opt(a); err != nil {
@@ -39,6 +53,8 @@ func NewAssets(fsys fs.FS, prefix string, opts ...AssetsOption) (*Assets, error)
 		}
 	}
 
+	// Set a.files as the underlying fs.
+	a.handler = http.FileServer(http.FS(a.files))
 	return a, nil
 }
 
@@ -55,30 +71,11 @@ type AssetsFS interface {
 	fs.FS
 
 	MkdirAll(string, fs.FileMode) error
-	WriteFile(string, string) error
+	WriteFile(string, []byte, fs.FileMode) error
 }
 
-func WithPrefix(pattern, prefix string, assetsFS AssetsFS) AssetsOption {
-	return func(a *Assets) error {
-		a.statics = make(map[string]string, len(a.statics))
-
-		fs.WalkDir(a.files, ".", func(entry string, d fs.DirEntry, err error) error {
-			if d.IsDir() {
-				if entry != "." {
-					_ = assetsFS.MkdirAll(entry, os.ModePerm)
-				}
-				return nil
-			}
-			data, _ := fs.ReadFile(a.files, entry)
-			content := string(data)
-			content = strings.ReplaceAll(content, pattern, prefix)
-			a.statics[path.Join("/", prefix, entry)] = entry
-			return assetsFS.WriteFile(entry, content)
-		})
-		a.files = assetsFS
-		a.handler = http.FileServer(http.FS(a.files))
-		return nil
-	}
+func NewInMem() AssetsFS {
+	return memoryfs.New()
 }
 
 func NewInMemAfero() AssetsFS {
@@ -101,12 +98,12 @@ func (f *inMemAfero) MkdirAll(entry string, fileMode fs.FileMode) error {
 }
 
 // WriteFile creates a file in the filesystem and write the content to it.
-func (f *inMemAfero) WriteFile(entry, content string) error {
+func (f *inMemAfero) WriteFile(entry string, content []byte, mode fs.FileMode) error {
 	h, err := f.assets.Create(entry)
 	if err != nil {
 		return err
 	}
-	_, err = h.WriteString(content)
+	_, err = h.Write(content)
 	if err != nil {
 		return err
 	}
