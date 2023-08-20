@@ -15,7 +15,7 @@ import (
 type Assets struct {
 	Files          AssetsFS
 	Statics        map[string]AssetInfo
-	StaticsSenders []func(w http.ResponseWriter, r *http.Request)
+	StaticsSenders []func(AssetInfo, w http.ResponseWriter, r *http.Request)
 	Index          *template.Template
 	IndexRenderer  func(params map[string]template.HTML, w http.ResponseWriter, r *http.Request)
 
@@ -91,7 +91,7 @@ func (a *Assets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if len(a.StaticsSenders) > 0 {
 			for _, sender := range a.StaticsSenders {
 				if sender != nil {
-					sender(w, r)
+					sender(entry, w, r)
 				}
 			}
 		}
