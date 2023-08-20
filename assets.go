@@ -13,10 +13,11 @@ import (
 )
 
 type Assets struct {
-	Files         AssetsFS
-	Statics       map[string]AssetInfo
-	Index         *template.Template
-	IndexRenderer func(params map[string]template.HTML, w http.ResponseWriter, r *http.Request)
+	Files          AssetsFS
+	Statics        map[string]AssetInfo
+	StaticsSenders []func(w http.ResponseWriter, r *http.Request)
+	Index          *template.Template
+	IndexRenderer  func(params map[string]template.HTML, w http.ResponseWriter, r *http.Request)
 
 	handler http.Handler
 }
@@ -80,11 +81,21 @@ func (a *Assets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(a.Statics) > 0 {
 		entry, ok := a.Statics[r.URL.Path]
 		if !ok {
+			if a.Index != nil && a.IndexRenderer != nil {
+				a.IndexRenderer(findIndexMetadata(a.Statics), w, r)
+				return
+			}
 			r.URL.Path = "/"
-		} else if a.Index != nil && a.IndexRenderer != nil {
-			a.IndexRenderer(findIndexMetadata(a.Statics), w, r)
-			return
 		}
+
+		if len(a.StaticsSenders) > 0 {
+			for _, sender := range a.StaticsSenders {
+				if sender != nil {
+					sender(w, r)
+				}
+			}
+		}
+
 		r.URL.Path = path.Join("/", entry.Path) // entry might be prepended by a prefix.
 	} else {
 		if _, err := a.Files.Stat(r.URL.Path); err != nil {
