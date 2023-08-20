@@ -15,9 +15,9 @@ import (
 type Assets struct {
 	Files          AssetsFS
 	Statics        map[string]AssetInfo
-	StaticsSenders []func(AssetInfo, w http.ResponseWriter, r *http.Request)
+	StaticsSenders []func(AssetInfo, http.ResponseWriter, *http.Request)
 	Index          *template.Template
-	IndexRenderer  func(params map[string]template.HTML, w http.ResponseWriter, r *http.Request)
+	IndexRenderer  func(map[string]template.HTML, http.ResponseWriter, *http.Request)
 
 	handler http.Handler
 }
