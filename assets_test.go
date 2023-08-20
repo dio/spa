@@ -32,6 +32,12 @@ func TestServeHTTP(t *testing.T) {
 			},
 		},
 		{
+			path: "/",
+			validate: func(body *bytes.Buffer) {
+				requireContainsBodyString(t, body, `"/static/js/index.206364e4.js"`) // This makes sure we trim the pattern correctly.
+			},
+		},
+		{
 			path: "/manifest.json",
 			validate: func(body *bytes.Buffer) {
 				requireContainsBodyString(t, body, "{}")
