@@ -17,7 +17,7 @@ type Assets struct {
 	Statics        map[string]AssetInfo
 	StaticsSenders []func(AssetInfo, http.ResponseWriter, *http.Request)
 	Index          *template.Template
-	IndexRenderer  func(map[string]template.HTML, http.ResponseWriter, *http.Request)
+	IndexRenderer  func(string, map[string]template.HTML, http.ResponseWriter, *http.Request)
 
 	handler http.Handler
 }
@@ -82,7 +82,8 @@ func (a *Assets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		entry, ok := a.Statics[r.URL.Path]
 		if !ok {
 			if a.Index != nil && a.IndexRenderer != nil {
-				a.IndexRenderer(findIndexMetadata(a.Statics), w, r)
+				key, meta := findIndexMetadata(a.Statics)
+				a.IndexRenderer(key, meta, w, r)
 				return
 			}
 			r.URL.Path = "/"
@@ -174,15 +175,15 @@ func (f *inMemEmbed) WriteFile(entry string, content []byte, mode fs.FileMode) e
 	return nil
 }
 
-func findIndexMetadata(assets map[string]AssetInfo) map[string]template.HTML {
+func findIndexMetadata(assets map[string]AssetInfo) (string, map[string]template.HTML) {
 	for k, v := range assets {
 		if strings.HasSuffix(k, "index.html") {
 			meta := make(map[string]template.HTML, len(v.Metadata))
 			for mk, mv := range v.Metadata {
 				meta[mk] = template.HTML(mv)
 			}
-			return meta
+			return k, meta
 		}
 	}
-	return nil
+	return "", nil
 }
