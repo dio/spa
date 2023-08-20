@@ -1,6 +1,7 @@
 package spa
 
 import (
+	"html/template"
 	"io/fs"
 	"net/http"
 	"os"
@@ -12,9 +13,18 @@ import (
 )
 
 type Assets struct {
-	files   AssetsFS
-	statics map[string]string
+	Files          AssetsFS
+	Statics        map[string]AssetInfo
+	StaticsSenders []func(AssetInfo, http.ResponseWriter, *http.Request)
+	Index          *template.Template
+	IndexRenderer  func(string, map[string]template.HTML, http.ResponseWriter, *http.Request)
+
 	handler http.Handler
+}
+
+type AssetInfo struct {
+	Path     string
+	Metadata map[string]string
 }
 
 func NewAssets(source fs.FS, sourcePrefix string, assets AssetsFS, opts ...AssetsOption) (*Assets, error) {
@@ -27,33 +37,33 @@ func NewAssets(source fs.FS, sourcePrefix string, assets AssetsFS, opts ...Asset
 
 	// When we have no intent to manipulate the loaded content, we can skip initializing memory-fs.
 	if len(opts) == 0 && assets == nil {
-		a.files = &inMemEmbed{assets: subtree}
-		a.handler = http.FileServer(http.FS(a.files))
+		a.Files = &inMemEmbed{assets: subtree}
+		a.handler = http.FileServer(http.FS(a.Files))
 		return a, nil
 	}
 
-	a.files = assets
-	if a.files == nil {
-		a.files = NewInMemAfero()
+	a.Files = assets
+	if a.Files == nil {
+		a.Files = NewInMemAfero()
 	}
 
 	// We create a map here to facilitate and track ETag-ing later.
-	a.statics = make(map[string]string, 0)
+	a.Statics = make(map[string]AssetInfo, 0)
 
 	// We always load the data to a writeable in-memory fs, hence we can do manipulation to the loaded assets.
 	_ = fs.WalkDir(subtree, ".", func(entry string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
 			if entry != "." {
-				_ = a.files.MkdirAll(entry, os.ModePerm)
+				_ = a.Files.MkdirAll(entry, os.ModePerm)
 			}
 			return nil
 		}
 		if entry != "index.html" {
 			// TODO(dio): ETag-ing.
-			a.statics[path.Join("/", entry)] = entry
+			a.Statics[path.Join("/", entry)] = AssetInfo{Path: entry}
 		}
 		data, _ := fs.ReadFile(subtree, entry)
-		return a.files.WriteFile(entry, data, os.ModePerm)
+		return a.Files.WriteFile(entry, data, os.ModePerm)
 	})
 
 	for _, opt := range opts {
@@ -63,22 +73,37 @@ func NewAssets(source fs.FS, sourcePrefix string, assets AssetsFS, opts ...Asset
 	}
 
 	// Set a.files as the underlying fs.
-	a.handler = http.FileServer(http.FS(a.files))
+	a.handler = http.FileServer(http.FS(a.Files))
 	return a, nil
 }
 
 func (a *Assets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if len(a.statics) > 0 {
-		entry, ok := a.statics[r.URL.Path]
+	if len(a.Statics) > 0 {
+		entry, ok := a.Statics[r.URL.Path]
 		if !ok {
+			if a.Index != nil && a.IndexRenderer != nil {
+				key, meta := findIndexMetadata(a.Statics)
+				a.IndexRenderer(key, meta, w, r)
+				return
+			}
 			r.URL.Path = "/"
 		}
-		r.URL.Path = path.Join("/", entry) // entry is prepended by the prefix.
+
+		if len(a.StaticsSenders) > 0 {
+			for _, sender := range a.StaticsSenders {
+				if sender != nil {
+					sender(entry, w, r)
+				}
+			}
+		}
+
+		r.URL.Path = path.Join("/", entry.Path) // entry might be prepended by a prefix.
 	} else {
-		if _, err := a.files.Stat(r.URL.Path); err != nil {
+		if _, err := a.Files.Stat(r.URL.Path); err != nil {
 			r.URL.Path = "/"
 		}
 	}
+
 	a.handler.ServeHTTP(w, r)
 }
 
@@ -148,4 +173,17 @@ func (f *inMemEmbed) Stat(name string) (os.FileInfo, error) {
 
 func (f *inMemEmbed) WriteFile(entry string, content []byte, mode fs.FileMode) error {
 	return nil
+}
+
+func findIndexMetadata(assets map[string]AssetInfo) (string, map[string]template.HTML) {
+	for k, v := range assets {
+		if strings.HasSuffix(k, "index.html") {
+			meta := make(map[string]template.HTML, len(v.Metadata))
+			for mk, mv := range v.Metadata {
+				meta[mk] = template.HTML(mv)
+			}
+			return k, meta
+		}
+	}
+	return "", nil
 }
