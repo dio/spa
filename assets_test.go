@@ -84,7 +84,55 @@ func TestServeHTTP(t *testing.T) {
 			}
 		})
 	}
+}
 
+func TestServeHTTPWithPrefix(t *testing.T) {
+	tests := []struct {
+		prefix   string
+		path     string
+		validate func(body *bytes.Buffer)
+	}{
+		{
+			path:   "/",
+			prefix: "",
+			validate: func(body *bytes.Buffer) {
+				requireContainsBodyString(t, body, `"/static/js/index.206364e4.js"`) // This makes sure we trim the pattern correctly.
+			},
+		},
+		{
+			path:   "/ok",
+			prefix: "ok",
+			validate: func(body *bytes.Buffer) {
+				requireContainsBodyString(t, body, `"/ok/static/js/index.206364e4.js"`) // This makes sure we trim the pattern correctly.
+			},
+		},
+		{
+			path:   "/ok/cool",
+			prefix: "ok/cool",
+			validate: func(body *bytes.Buffer) {
+				requireContainsBodyString(t, body, `"/ok/cool/static/js/index.206364e4.js"`) // This makes sure we trim the pattern correctly.
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.path, func(t *testing.T) {
+			assets, err := spa.NewAssets(testdataFs, "testdata/app", spa.NewInMem(), spa.WithPrefix("%DEPLOYMENT_PATH%", test.prefix))
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodGet, test.path, nil)
+			require.NoError(t, err)
+			rr := httptest.NewRecorder()
+			handler := http.HandlerFunc(assets.ServeHTTP)
+			handler.ServeHTTP(rr, req)
+			require.Equal(t, rr.Code, http.StatusOK)
+			if test.validate != nil {
+				test.validate(rr.Body)
+			}
+		})
+	}
 }
 
 func requireContainsBodyString(t *testing.T, body *bytes.Buffer, expected string) {
